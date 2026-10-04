@@ -1,40 +1,28 @@
 param(
-    [Parameter(Mandatory = $true)][string]$RepoPath,
+    [string]$RepoPath,
     [switch]$CheckOnly
 )
 
-$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Windows.Forms
 
-if (-not (Test-Path (Join-Path $RepoPath ".git"))) {
-    Write-Output "HATA: '$RepoPath' bir git deposu degil."
-    exit 2
-}
+# Her zaman en ustte gorunmesi icin gorunmez bir owner form kullan
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.WindowState = "Minimized"
+$owner.Show()
 
-Set-Location $RepoPath
+$mode = if ($CheckOnly) { "CheckOnly" } else { "Update" }
+[System.Windows.Forms.MessageBox]::Show(
+    $owner,
+    "selam`n`nMod: $mode`nRepoPath: $RepoPath",
+    "Equicord AutoUpdater Test",
+    "OK",
+    "Information"
+) | Out-Null
 
-git fetch origin 2>&1 | Out-Null
-$local  = (git rev-parse HEAD).Trim()
-$remote = (git rev-parse "@{u}").Trim()
+$owner.Dispose()
 
-if ($local -eq $remote) {
-    Write-Output "UP_TO_DATE"
-    exit 0
-}
-
-if ($CheckOnly) {
-    Write-Output "UPDATE_AVAILABLE"
-    exit 0
-}
-
-Write-Output "Guncelleme bulundu, indiriliyor..."
-git pull --autostash 2>&1
-if ($LASTEXITCODE -ne 0) { Write-Output "HATA: git pull basarisiz."; exit 3 }
-
-pnpm install --frozen-lockfile 2>&1
-if ($LASTEXITCODE -ne 0) { Write-Output "HATA: pnpm install basarisiz."; exit 4 }
-
-pnpm build 2>&1
-if ($LASTEXITCODE -ne 0) { Write-Output "HATA: pnpm build basarisiz."; exit 5 }
-
-Write-Output "UPDATED"
+# Plugin'in tanidigi cikti; guncelleme dongusune girmesin diye
+Write-Output "UP_TO_DATE"
 exit 0
