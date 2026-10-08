@@ -1,16 +1,45 @@
 # DiscordPatcher.ps1
-# Autostart kapat -> göreve kendini ekle -> app.asar + _app.asar'ı değiştir -> Discord'u aç
+# İlk çalıştırmada kendini C:\Tools\DiscordPatcher.ps1 konumuna kopyalar,
+# göreve o sabit yolu ekler. $PSCommandPath'e güvenmez, path hep sabittir.
 
 $ErrorActionPreference = "SilentlyContinue"
 
 # ===================== AYARLAR =====================
-$BaseUrl = "https://raw.githubusercontent.com/KULLANICI/REPO/main"   # <-- repo raw klasörü
-$Files   = @("app.asar", "_app.asar")                                # repodan çekilecek dosyalar
+$BaseUrl      = "https://raw.githubusercontent.com/KULLANICI/REPO/main"
+$Files        = @("app.asar", "_app.asar")
 $TaskName     = "DiscordPatcher"
 $DiscordRoot  = "$env:LOCALAPPDATA\Discord"
 $UpdateExe    = "$DiscordRoot\Update.exe"
 $WatchSeconds = 120
+
+$InstallDir  = "C:\Tools"
+$InstallPath = Join-Path $InstallDir "DiscordPatcher.ps1"
 # ===================================================
+
+# --- 0) Kendini sabit konuma kur (ilk çalıştırmada) ---
+if (-not (Test-Path $InstallDir)) {
+    New-Item $InstallDir -ItemType Directory -Force | Out-Null
+}
+
+$runningFrom = $MyInvocation.MyCommand.Path   # şu an çalışan dosyanın yolu (varsa)
+
+if ($runningFrom -and ($runningFrom -ne $InstallPath)) {
+    # Başka bir yerden çalıştırıldı -> kendini kopyala, kopyayı başlat, kendini kapat
+    Copy-Item -Path $runningFrom -Destination $InstallPath -Force
+    Start-Process powershell -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$InstallPath`""
+    exit
+}
+
+if (-not (Test-Path $InstallPath)) {
+    # Hiç dosya yok (ör. kod yapıştırılarak -Command ile çalıştırıldı) -> kendi içeriğini yaz
+    $selfContent = $MyInvocation.MyCommand.ScriptContents
+    if ($selfContent) {
+        Set-Content -Path $InstallPath -Value $selfContent -Encoding UTF8
+    }
+}
+
+# Bundan sonrası hep $InstallPath üzerinden ilerler
+$ScriptPath = $InstallPath
 
 # --- 1) Discord'un startup kaydını kapat ---
 $runKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
@@ -23,11 +52,17 @@ if (Get-ItemProperty -Path $approvedKey -Name "Discord") {
     Set-ItemProperty -Path $approvedKey -Name "Discord" -Value $disabled -Type Binary
 }
 
-# --- 2) Görev yoksa kendini ekle (UAC gerektirmez) ---
-if (-not (Get-ScheduledTask -TaskName $TaskName)) {
+# --- 2) Görev yoksa veya yanlış yolu gösteriyorsa yeniden kaydet ---
+$task = Get-ScheduledTask -TaskName $TaskName
+if ($task -and ($task.Actions[0].Arguments -notlike "*$ScriptPath*")) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    $task = $null
+}
+
+if (-not $task) {
     $user      = "$env:USERDOMAIN\$env:USERNAME"
     $action    = New-ScheduledTaskAction -Execute "powershell.exe" `
-                 -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+                 -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`""
     $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
     $settings  = New-ScheduledTaskSettingsSet -Priority 4 -AllowStartIfOnBatteries `
@@ -48,7 +83,6 @@ function Stop-Discord {
     Start-Sleep -Milliseconds 800
 }
 
-# Tüm dosyaları indirir. Biri bile inmezse $null döner (hiçbir şey silinmez)
 function Get-AllFiles {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     $dir = Join-Path $env:TEMP "discord_patch"
@@ -72,7 +106,6 @@ function Get-AllFiles {
 function Install-Files($appDir, $srcDir) {
     $resources = Join-Path $appDir.FullName "resources"
 
-    # Hepsi zaten aynıysa dokunma
     $same = $true
     foreach ($f in $Files) {
         $t = Join-Path $resources $f
@@ -84,7 +117,7 @@ function Install-Files($appDir, $srcDir) {
     Stop-Discord
     foreach ($f in $Files) {
         $t = Join-Path $resources $f
-        Remove-Item $t -Force                              # eski app.asar / _app.asar (Equicord CLI'nin bıraktıkları dahil)
+        Remove-Item $t -Force
         Copy-Item (Join-Path $srcDir $f) $t -Force
     }
     return $true
